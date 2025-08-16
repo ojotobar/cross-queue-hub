@@ -32,17 +32,9 @@ dotnet add package CrossQueue.Hub
 ```json
 {
   "CrossQueueHub": {
-    "Provider": "RabbitMQ",
     "RabbitMQ": {
-      "Host": "amqp://user:password@hostname/vhost"
-    },
-    "Kafka": {
-      "BootstrapServers": "localhost:9092"
-    },
-    "SQS": {
-      "Region": "us-east-1",
-      "AccessKey": "your-access-key",
-      "SecretKey": "your-secret-key"
+      "Connection": "amqp://user:password@hostname/vhost",
+      "Exchange": "default"
     }
   }
 }
@@ -53,31 +45,44 @@ dotnet add package CrossQueue.Hub
 builder.Services.AddCrossQueueHub(builder.Configuration);
 ```
 
-### 3. Publish a message
+### 3. Inject the RabbitMQPubSub class into the constructor of the class you want to use it.
 ```csharp
-await _publisher.PublishAsync("orders.created", new { OrderId = 123, Amount = 250.00 });
+public class RabbitMQPubSubUser
+{
+  private readonly RabbitMQPubSub _pubSub;
+
+  public RabbitMQPubSubUser(RabbitMQPubSub pubSub)
+  {
+    _pubSub = pubSub;
+  }
+}
 ```
 
-### 4. Subscribe to a message
+### 4. Publish a message
 ```csharp
-_subscriber.Subscribe<OrderCreated>("orders.created", message =>
+_pubSub.Publish(new { OrderId = 123, Amount = 250.00 }, "order.created");
+```
+
+### 5. Subscribe to a message
+```csharp
+_pubSub.Subscribe<object>("order-queue", "order.created", async message =>
 {
-    Console.WriteLine($"Order received: {message.OrderId} - {message.Amount}");
-});
+    Console.WriteLine(message);
+    await Task.CompletedTask;
+}, CancellationToken.None);
 ```
 
 ---
 
 ## 🛠 Supported Brokers
 - ✅ RabbitMQ  
-- ✅ Apache Kafka  
-- ✅ AWS SQS  
 
 ---
 
 ## 📖 Roadmap
+- Apache Kafka  
+- AWS SQS  
 - Add support for Azure Service Bus.
-- Add retry policies and dead-letter queue handling.
 - Metrics & observability integrations.
 
 ---

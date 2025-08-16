@@ -29,7 +29,7 @@ jobs:
       - name: Get current version from csproj
         id: get_version
         run: |
-          VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" src/DiagnosKit.Core/DiagnosKit.Core.csproj)
+          VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" src/CrossQueue.Hub/CrossQueue.Hub.csproj)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Current version: $VERSION"
 
@@ -65,15 +65,15 @@ jobs:
             NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}-$PR_LABEL.$PR_NUM"
           fi
 
-          sed -i "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|" src/DiagnosKit.Core/DiagnosKit.Core.csproj
+          sed -i "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|" src/CrossQueue.Hub/CrossQueue.Hub.csproj
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "New version: $NEW_VERSION"
 
       - name: Build solution
-        run: dotnet build DiagnosKit.Core.sln --configuration Release --no-restore --verbosity normal
+        run: dotnet build CrossQueue.Hub.sln --configuration Release --no-restore --verbosity normal
 
       - name: Pack NuGet package
-        run: dotnet pack src/DiagnosKit.Core/DiagnosKit.Core.csproj -p:Configuration=Release -p:PackageId=DiagnosKit.Core --no-build -o ./artifacts
+        run: dotnet pack src/CrossQueue.Hub/CrossQueue.Hub.csproj -p:Configuration=Release -p:PackageId=CrossQueue.Hub --no-build -o ./artifacts
 
       - name: Push package to NuGet
         run: dotnet nuget push "./artifacts/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
