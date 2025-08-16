@@ -46,81 +46,77 @@ namespace CrossQueue.Hub.Services.Implementations
 
         public void Subscribe<TMessage>(string queue, string routingKey, Func<TMessage, Task> handler, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                _channel.BasicQos(0, 1, false);
+            _channel.BasicQos(0, 1, false);
 
-                var channelConsumer = new AsyncEventingBasicConsumer(_channel);
-                _channel.QueueDeclare(queue: queue, durable: true, exclusive: false, autoDelete: false);
-
-                // Queue (DLX set to retry exchange)
-                var mainArgs = new Dictionary<string, object>
+            // Queue (DLX set to retry exchange)
+            var mainArgs = new Dictionary<string, object>
             {
                 { "x-dead-letter-exchange", retryX }
             };
 
-                _channel.QueueBind(queue: queue,
-                    exchange: _settings.RabbitMQ.Exchange,
-                    routingKey: routingKey,
-                    arguments: mainArgs);
+            _channel.QueueDeclare(queue: queue, durable: true, exclusive: false, autoDelete: false, arguments: mainArgs);
+            _channel.QueueBind(queue, _settings.RabbitMQ.Exchange, routingKey);
 
-                SetupRetryExchangeAndQueue(queue);
-                _logger.LogInformation(" [*] Waiting for messages...");
+            SetupRetryExchangeAndQueue(queue);
 
-                var consumer = new EventingBasicConsumer(_channel);
-                consumer.Received += (model, ea) =>
+            var consumer = new AsyncEventingBasicConsumer(_channel);
+            consumer.Received += async (model, ea) =>
+            {
+                try
                 {
-                    try
+                    var json = Encoding.UTF8.GetString(ea.Body.ToArray());
+                    var message = JsonSerializer.Deserialize<TMessage>(json);
+
+                    if (message == null)
                     {
-                        var json = Encoding.UTF8.GetString(ea.Body.ToArray());
-                        var message = JsonSerializer.Deserialize<TMessage>(json);
-                        if (message == null)
-                        {
-                            _logger.LogWarning($"The message of type {typeof(TMessage)} is null");
-                            return;
-                        }
-
-                        handler(message);
-                        _channel.BasicAck(ea.DeliveryTag, multiple: false);
+                        _logger.LogWarning($"The message of type {typeof(TMessage)} is null");
+                        _channel.BasicAck(ea.DeliveryTag, false);
+                        return;
                     }
-                    catch (JsonException ex)
+
+                    await handler(message);
+                    _channel.BasicAck(ea.DeliveryTag, false);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError($"JSON parsing failed: {ex.Message}");
+                    _channel.BasicNack(ea.DeliveryTag, false, requeue: false); // goes to DLQ
+                }
+                catch (Exception ex)
+                {
+                    var props = ea.BasicProperties;
+                    var headers = props?.Headers ?? new Dictionary<string, object>();
+
+                    int retryCount = headers.ContainsKey("x-retry-count")
+                        ? Convert.ToInt32(headers["x-retry-count"])
+                        : 0;
+
+                    if (retryCount >= maxRetry)
                     {
-                        _logger.LogError($"JSON parsing failed: {ex.Message}");
-                        _channel.BasicNack(ea.DeliveryTag, false, requeue: false); // goes to DLQ
+                        _logger.LogInformation($"Sending to DLQ after {maxRetry} retries: {ex.Message}");
+                        var dlqProps = _channel.CreateBasicProperties();
+                        _channel.BasicPublish(dlx, "", dlqProps, ea.Body);
                     }
-                    catch (Exception)
+                    else
                     {
-                        var props = ea.BasicProperties;
-                        var headers = props.Headers ?? new Dictionary<string, object>();
-                        int retryCount = headers.ContainsKey("x-retry-count")
-                            ? Convert.ToInt32(headers["x-retry-count"])
-                            : 0;
+                        _logger.LogWarning($"Retry {retryCount + 1} after backoff: {ex.Message}");
 
-                        if (retryCount >= maxRetry)
-                        {
-                            _logger.LogInformation($"Sending to DLQ after {maxRetry} retries");
-                            var dlqProps = _channel.CreateBasicProperties();
-                            _channel.BasicPublish(dlx, "", dlqProps, ea.Body);
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Retry {retryCount + 1} after backoff");
-
-                            var retryProps = _channel.CreateBasicProperties();
-                            retryProps.Headers = new Dictionary<string, object>
-                        {
-                            { "x-retry-count", retryCount + 1 }
-                        };
-
-                            _channel.BasicPublish(dlx, "retry", retryProps, ea.Body);
-                        }
-
-                        _channel.BasicAck(ea.DeliveryTag, false); // Acknowledge regardless
-                    }
+                        var retryProps = _channel.CreateBasicProperties();
+                        retryProps.Headers = new Dictionary<string, object>
+                {
+                    { "x-retry-count", retryCount + 1 }
                 };
 
-                _channel.BasicConsume(queue: queue, autoAck: true, consumer: consumer);
-            }
+                        _channel.BasicPublish(dlx, "retry", retryProps, ea.Body);
+                    }
+
+                    _channel.BasicAck(ea.DeliveryTag, false);
+                }
+            };
+
+            _channel.BasicConsume(queue: queue, autoAck: false, consumer: consumer);
+
+            _logger.LogInformation($" [*] Subscribed to queue '{queue}' with routing key '{routingKey}'");
         }
 
         private void SetupRetryExchangeAndQueue(string mainQueue)
