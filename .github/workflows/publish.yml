@@ -1,0 +1,79 @@
+name: Auto Version Bump & Publish NuGet
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+jobs:
+  publish:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'develop'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.CI_PAT }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore CrossQueue.Hub.sln
+
+      - name: Get current version from csproj
+        id: get_version
+        run: |
+          VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" src/DiagnosKit.Core/DiagnosKit.Core.csproj)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Current version: $VERSION"
+
+      - name: Bump version with prerelease support
+        id: bump_version
+        run: |
+          FULL_VERSION="$VERSION"
+          CORE_VERSION="${FULL_VERSION%%-*}"
+          PRERELEASE="${FULL_VERSION#"$CORE_VERSION"}"
+          PRERELEASE="${PRERELEASE#-}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<<"$CORE_VERSION"
+
+          if [ -z "$PRERELEASE" ] || [ "$PRERELEASE" = "$FULL_VERSION" ]; then
+            PATCH=$((PATCH + 1))
+            if [ "$PATCH" -gt 9 ]; then
+              PATCH=0
+              MINOR=$((MINOR + 1))
+            fi
+            if [ "$MINOR" -gt 9 ]; then
+              MINOR=0
+              MAJOR=$((MAJOR + 1))
+            fi
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          else
+            PR_LABEL="${PRERELEASE%%.*}"
+            PR_NUM="${PRERELEASE#"$PR_LABEL."}"
+            if ! [[ "$PR_NUM" =~ ^[0-9]+$ ]]; then
+              PR_NUM=1
+            else
+              PR_NUM=$((PR_NUM + 1))
+            fi
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}-$PR_LABEL.$PR_NUM"
+          fi
+
+          sed -i "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|" src/DiagnosKit.Core/DiagnosKit.Core.csproj
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "New version: $NEW_VERSION"
+
+      - name: Build solution
+        run: dotnet build DiagnosKit.Core.sln --configuration Release --no-restore --verbosity normal
+
+      - name: Pack NuGet package
+        run: dotnet pack src/DiagnosKit.Core/DiagnosKit.Core.csproj -p:Configuration=Release -p:PackageId=DiagnosKit.Core --no-build -o ./artifacts
+
+      - name: Push package to NuGet
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
