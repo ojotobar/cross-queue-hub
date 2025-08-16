@@ -12,7 +12,7 @@
 		<PackageProjectUrl>https://github.com/ojotobar/cross-queue-hub</PackageProjectUrl>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<Version>1.0.1-rc</Version>
+		<Version>0.0.9</Version>
 	</PropertyGroup>
 	<ItemGroup>
 		<None Include="../../README.md" Pack="true" PackagePath="" />
