@@ -32,52 +32,78 @@ dotnet add package CrossQueue.Hub
 ```json
 {
   "CrossQueueHub": {
-    "Provider": "RabbitMQ",
     "RabbitMQ": {
-      "Host": "amqp://user:password@hostname/vhost"
-    },
-    "Kafka": {
-      "BootstrapServers": "localhost:9092"
-    },
-    "SQS": {
-      "Region": "us-east-1",
-      "AccessKey": "your-access-key",
-      "SecretKey": "your-secret-key"
+        "ConnectionString": "amqp://guest:guest@localhost:5672/",
+        "DefaultExchange": "default-exchange",
+        "DefaultExchangeType": "fanout",
+        "Durable": true,
+        "PublishRetryCount": 5,
+        "PublishRetryDelayMs": 200,
+        "ConsumerRetryCount": 5,
+        "ConsumerRetryDelayMs": 500,
+        "DeadLetterExchange": "dlx"
     }
   }
 }
 ```
 
 ### 2. Register CrossQueue.Hub in Program.cs
+The are two overloads of the ```AddCrossQueueHubRabbitMqBus()``` method
 ```csharp
-builder.Services.AddCrossQueueHub(builder.Configuration);
-```
-
-### 3. Publish a message
-```csharp
-await _publisher.PublishAsync("orders.created", new { OrderId = 123, Amount = 250.00 });
-```
-
-### 4. Subscribe to a message
-```csharp
-_subscriber.Subscribe<OrderCreated>("orders.created", message =>
+// Using Action<CrossQueueOptions> overload for code-based config
+builder.Services.AddCrossQueueHubRabbitMqBus(opt =>
 {
-    Console.WriteLine($"Order received: {message.OrderId} - {message.Amount}");
+    opt.ConnectionString = "amqp://guest:guest@localhost:5672/";
+    opt.DefaultExchange = "myapp.exchange";
+    opt.DefaultExchangeType = ExchangeType.Topic;
 });
+
+// Using IConfiguration overload
+builder.Services.AddCrossQueueHubRabbitMqBus(builder.Configuration);
+
+// OR using custom section name.
+// In this case, your section in the appsettings.json will be 'MyCustomRabbitMq' instead of 'CrossQueueHub'
+builder.Services.AddRabbitMqBus(builder.Configuration, "MyCustomRabbitMq");
+```
+
+### 3. Inject the RabbitMQPubSub class into the constructor of the class you want to use it.
+```csharp
+public class RabbitMQPubSubTest
+{
+  private readonly IRabbitMQPubSub _pubSub;
+
+  public RabbitMQPubSubUser(IRabbitMQPubSub pubSub)
+  {
+    _pubSub = pubSub;
+  }
+}
+```
+
+### 4. Publish a message
+```csharp
+await _pubSub.PublishAsync(new { Text = "Hello World" }, routingKey: "my.route");
+```
+
+### 5. Subscribe to a message
+```csharp
+_pubSub.Subscribe<dynamic>("my.queue", async msg =>
+{
+    Console.WriteLine($"Received: {msg.Text}");
+    await Task.CompletedTask;
+}, routingKey: "my.route");
 ```
 
 ---
 
 ## 🛠 Supported Brokers
 - ✅ RabbitMQ  
-- ✅ Apache Kafka  
-- ✅ AWS SQS  
 
 ---
 
 ## 📖 Roadmap
+- Apache Kafka  
+- AWS SQS  
 - Add support for Azure Service Bus.
-- Add retry policies and dead-letter queue handling.
 - Metrics & observability integrations.
 
 ---
