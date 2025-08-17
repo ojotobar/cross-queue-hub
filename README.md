@@ -51,7 +51,7 @@ dotnet add package CrossQueue.Hub
 The are two overloads of the ```AddCrossQueueHubRabbitMqBus()``` method
 ```csharp
 // Using Action<CrossQueueOptions> overload for code-based config
-builder.Services.AddRabbitMqBus(opt =>
+builder.Services.AddCrossQueueHubRabbitMqBus(opt =>
 {
     opt.ConnectionString = "amqp://guest:guest@localhost:5672/";
     opt.DefaultExchange = "myapp.exchange";
@@ -59,7 +59,7 @@ builder.Services.AddRabbitMqBus(opt =>
 });
 
 // Using IConfiguration overload
-builder.Services.AddRabbitMqBus(builder.Configuration);
+builder.Services.AddCrossQueueHubRabbitMqBus(builder.Configuration);
 
 // OR using custom section name.
 // In this case, your section in the appsettings.json will be 'MyCustomRabbitMq' instead of 'CrossQueueHub'
