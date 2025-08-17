@@ -33,25 +33,46 @@ dotnet add package CrossQueue.Hub
 {
   "CrossQueueHub": {
     "RabbitMQ": {
-      "Connection": "amqp://user:password@hostname/vhost",
-      "Exchange": "default"
+        "ConnectionString": "amqp://guest:guest@localhost:5672/",
+        "DefaultExchange": "default-exchange",
+        "DefaultExchangeType": "fanout",
+        "Durable": true,
+        "PublishRetryCount": 5,
+        "PublishRetryDelayMs": 200,
+        "ConsumerRetryCount": 5,
+        "ConsumerRetryDelayMs": 500,
+        "DeadLetterExchange": "dlx"
     }
   }
 }
 ```
 
 ### 2. Register CrossQueue.Hub in Program.cs
+The are two overloads of the ```AddCrossQueueHubRabbitMqBus()``` method
 ```csharp
-builder.Services.AddCrossQueueHub(builder.Configuration);
+// Using Action<CrossQueueOptions> overload for code-based config
+builder.Services.AddRabbitMqBus(opt =>
+{
+    opt.ConnectionString = "amqp://guest:guest@localhost:5672/";
+    opt.DefaultExchange = "myapp.exchange";
+    opt.DefaultExchangeType = ExchangeType.Topic;
+});
+
+// Using IConfiguration overload
+builder.Services.AddRabbitMqBus(builder.Configuration);
+
+// OR using custom section name.
+// In this case, your section in the appsettings.json will be 'MyCustomRabbitMq' instead of 'CrossQueueHub'
+builder.Services.AddRabbitMqBus(builder.Configuration, "MyCustomRabbitMq");
 ```
 
 ### 3. Inject the RabbitMQPubSub class into the constructor of the class you want to use it.
 ```csharp
-public class RabbitMQPubSubUser
+public class RabbitMQPubSubTest
 {
-  private readonly RabbitMQPubSub _pubSub;
+  private readonly IRabbitMQPubSub _pubSub;
 
-  public RabbitMQPubSubUser(RabbitMQPubSub pubSub)
+  public RabbitMQPubSubUser(IRabbitMQPubSub pubSub)
   {
     _pubSub = pubSub;
   }
@@ -60,16 +81,16 @@ public class RabbitMQPubSubUser
 
 ### 4. Publish a message
 ```csharp
-_pubSub.Publish(new { OrderId = 123, Amount = 250.00 }, "order.created");
+await _pubSub.PublishAsync(new { Text = "Hello World" }, routingKey: "my.route");
 ```
 
 ### 5. Subscribe to a message
 ```csharp
-_pubSub.Subscribe<object>("order-queue", "order.created", async message =>
+_pubSub.Subscribe<dynamic>("my.queue", async msg =>
 {
-    Console.WriteLine(message);
+    Console.WriteLine($"Received: {msg.Text}");
     await Task.CompletedTask;
-}, CancellationToken.None);
+}, routingKey: "my.route");
 ```
 
 ---

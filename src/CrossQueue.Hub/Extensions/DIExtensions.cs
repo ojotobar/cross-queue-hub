@@ -1,43 +1,30 @@
 ﻿using CrossQueue.Hub.Services.Implementations;
+using CrossQueue.Hub.Services.Interfaces;
 using CrossQueue.Hub.Shared.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using RabbitMQ.Client;
-using System;
 
 namespace CrossQueue.Hub.Shared.Extensions
 {
     public static class DIExtensions
     {
-        public static IServiceCollection AddCrossQueueHub(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddCrossQueueHubRabbitMqBus(this IServiceCollection services, 
+            Action<CrossQueueOptions> configure)
         {
-            services.Configure<CrossQueueSettings>(
-                configuration.GetSection("CrossQueueHub"));
+            services.Configure(configure);
+            services.AddSingleton<IRabbitMQConnection, RabbitMQConnection>();
+            services.AddSingleton<IRabbitMQPubSub, RabbitMQPubSub>();
 
-            services.AddSingleton(sp =>
-            {
-                using var scope = sp.CreateScope();
+            return services;
+        }
 
-                var settings = scope.ServiceProvider
-                    .GetRequiredService<IOptions<CrossQueueSettings>>().Value;
+        public static IServiceCollection AddCrossQueueHubRabbitMqBus(this IServiceCollection services, 
+            IConfiguration configuration, string sectionName = "CrossQueueHub")
+        {
+            services.Configure<CrossQueueOptions>(configuration.GetSection(sectionName));
+            services.AddSingleton<IRabbitMQConnection, RabbitMQConnection>();
+            services.AddSingleton<IRabbitMQPubSub, RabbitMQPubSub>();
 
-                var logger = sp
-                     .GetRequiredService<ILoggerFactory>()
-                     .CreateLogger<RabbitMQPubSub>();
-
-                var factory = new ConnectionFactory
-                {
-                    Uri = new Uri(settings.RabbitMQ.Connection),
-                    AutomaticRecoveryEnabled = true,
-                };
-
-                using var connection = factory.CreateConnection();
-
-                return new RabbitMQPubSub(connection, settings, logger);
-            });
-    
             return services;
         }
     }
