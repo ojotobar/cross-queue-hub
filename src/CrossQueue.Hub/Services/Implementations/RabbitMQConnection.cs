@@ -27,7 +27,7 @@ namespace CrossQueue.Hub.Services.Implementations
         public IConnection GetConnection()
         {
             const int maxRetries = 10;
-            var delay = TimeSpan.FromSeconds(5);
+            var delay = TimeSpan.FromSeconds(30);
             for (int i = 1; i <= maxRetries; i++)
             {
                 try
